@@ -1,0 +1,22 @@
+{
+  "name": "pi-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "macOS-native sandbox extension for pi — OS-level filesystem and network sandboxing",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.26"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.6"
+  }
+}
