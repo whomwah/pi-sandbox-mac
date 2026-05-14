@@ -839,15 +839,16 @@ describe("createSpawnHook", () => {
     expect(result.env.GIT_SSH_COMMAND).toBeUndefined();
   });
 
-  test("injects GIT_SSH_COMMAND with nc SOCKS proxy when socksProxyPort is provided", () => {
+  test("injects GIT_SSH_COMMAND into command prefix when socksProxyPort is provided", () => {
     process.env.HOME = "/home/user";
     const hook = createSpawnHook("/tmp/agent.sock", 57632);
     const result = hook({ command: "git push", cwd: "/proj", env: {} });
-    expect(result.env.GIT_SSH_COMMAND).toBeDefined();
-    expect(result.env.GIT_SSH_COMMAND).toContain("ProxyCommand=nc -X 5 -x localhost:57632 %h %p");
-    expect(result.env.GIT_SSH_COMMAND).toContain("IdentityAgent=/tmp/agent.sock");
-    expect(result.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=no");
-    expect(result.env.GIT_SSH_COMMAND).toContain("UserKnownHostsFile=/dev/null");
+    expect(result.command).toContain("GIT_SSH_COMMAND='");
+    expect(result.command).toContain("ProxyCommand=nc -X 5 -x localhost:57632 %h %p");
+    expect(result.command).toContain("IdentityAgent=/tmp/agent.sock");
+    expect(result.command).toContain("StrictHostKeyChecking=no");
+    expect(result.command).toContain("UserKnownHostsFile=/dev/null");
+    expect(result.command).toMatch(/GIT_SSH_COMMAND='.+ git push/);
   });
 });
 

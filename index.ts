@@ -354,7 +354,7 @@ export function createSpawnHook(sshAuthSock: string, socksProxyPort?: number): B
       HOME: process.env.HOME ?? "",
     };
     if (socksProxyPort !== undefined) {
-      extraEnv.GIT_SSH_COMMAND = [
+      const gitSshCmd = [
         "ssh",
         `-o 'ProxyCommand=nc -X 5 -x localhost:${socksProxyPort} %h %p'`,
         "-o StrictHostKeyChecking=no",
@@ -363,6 +363,8 @@ export function createSpawnHook(sshAuthSock: string, socksProxyPort?: number): B
         "-o GlobalKnownHostsFile=/dev/null",
         `-o 'IdentityAgent=${sshAuthSock}'`,
       ].join(" ");
+      // Inject directly into command to override pi's own GIT_SSH_COMMAND
+      command = `GIT_SSH_COMMAND='${gitSshCmd}' ${command}`;
     }
     return {
       command,
