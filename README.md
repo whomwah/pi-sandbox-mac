@@ -53,7 +53,7 @@ Both files are **optional**. Anything you omit keeps its default value — you d
 ```json
 {
   "enabled": true,
-  "sshAuthSock": "~/.1password/agent.sock",
+  "sshAuthSock": "",
   "network": {
     "allowedDomains": [
       "npmjs.org", "*.npmjs.org", "registry.npmjs.org",
@@ -102,11 +102,13 @@ Grant additional write access via `allowWrite`:
 
 Write access gives the agent full control over files in that path — only grant what's needed.
 
-## SSH / Git with 1Password
+## SSH / Git
 
-Git works automatically if 1Password SSH agent is running. No manual config needed.
+Git and SSH work with **any SSH agent** that exposes a socket via the `$SSH_AUTH_SOCK` environment variable (OpenSSH `ssh-agent`, 1Password, Secretive, etc.). No manual config is needed — the extension reads `$SSH_AUTH_SOCK` automatically.
 
-The extension reads `$SSH_AUTH_SOCK` (falling back to `~/.1password/agent.sock`), resolves the symlink, and adds both paths to the sandbox allow list. A spawn hook injects `SSH_AUTH_SOCK`, `HOME`, and a `GIT_SSH_COMMAND` with the correct SOCKS proxy and host-key options into every bash command.
+If `$SSH_AUTH_SOCK` is unset, the extension auto-detects `~/.1password/agent.sock` if it exists. For any other agent, set `sshAuthSock` in your config.
+
+Once the socket is resolved, the extension resolves any symlinks and adds both paths to the sandbox allow list. A spawn hook injects `SSH_AUTH_SOCK`, `HOME`, and a `GIT_SSH_COMMAND` with the correct SOCKS proxy and host-key options into every bash command.
 
 ## Commands & Flags
 
@@ -125,9 +127,9 @@ Add the path to `allowWrite` in `.pi/sandbox.json`, remove it from `denyRead`, o
 
 ### SSH / Git fails with authentication errors
 
-1. Confirm 1Password SSH agent is enabled and `echo $SSH_AUTH_SOCK` points to the socket
+1. Confirm your SSH agent is running: `echo $SSH_AUTH_SOCK` should point to a valid socket (output will vary by agent)
 2. Run `/sandbox` in pi to verify the socket path is detected
-3. If using a non-standard socket, set `sshAuthSock` in your config
+3. If using a non-standard agent without `$SSH_AUTH_SOCK`, set `sshAuthSock` in your config
 
 ### Large file writes fail (>512KB)
 
