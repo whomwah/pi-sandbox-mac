@@ -6,7 +6,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join, dirname } from "node:path";
 import { SandboxManager, type SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime";
@@ -346,17 +346,30 @@ export function sandboxExecStream(
 // SSH agent spawn hook
 // ---------------------------------------------------------------------------
 
-/** Create a spawnHook that injects SSH_AUTH_SOCK and HOME into every sandboxed spawn. */
-export function createSpawnHook(sshAuthSock: string): BashSpawnHook {
-  return ({ command, cwd, env }) => ({
-    command,
-    cwd,
-    env: {
-      ...env,
+/** Create a spawnHook that injects SSH_AUTH_SOCK, GIT_SSH_COMMAND, and HOME into every sandboxed spawn. */
+export function createSpawnHook(sshAuthSock: string, proxyScriptPath?: string): BashSpawnHook {
+  return ({ command, cwd, env }) => {
+    const extraEnv: Record<string, string> = {
       SSH_AUTH_SOCK: sshAuthSock,
       HOME: process.env.HOME ?? "",
-    },
-  });
+    };
+    if (proxyScriptPath) {
+      extraEnv.GIT_SSH_COMMAND = [
+        "ssh",
+        `-o "ProxyCommand=python3 ${proxyScriptPath} %h %p"`,
+        "-o \"StrictHostKeyChecking=no\"",
+        "-o \"UserKnownHostsFile=/dev/null\"",
+        "-o \"CheckHostIP=no\"",
+        "-o \"GlobalKnownHostsFile=/dev/null\"",
+        `-o \"IdentityAgent=${sshAuthSock}\"`,
+      ].join(" ");
+    }
+    return {
+      command,
+      cwd,
+      env: { ...env, ...extraEnv },
+    };
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -485,6 +498,35 @@ export function createSandboxedBashOps(): BashOperations {
 }
 
 // ---------------------------------------------------------------------------
+// Proxy SSH script (tunnels SSH through the sandbox HTTP proxy)
+// ---------------------------------------------------------------------------
+
+const PROXY_SSH_SCRIPT = `#!/usr/bin/env python3
+import socket, os, select, sys
+host, port = sys.argv[1], sys.argv[2]
+# GitHub uses ssh.github.com:443 for SSH
+if host == 'github.com':
+    host, port = 'ssh.github.com', '443'
+s = socket.socket()
+s.connect(('localhost', __PROXY_PORT__))
+s.sendall(f'CONNECT {host}:{port} HTTP/1.1\\r\\nHost: {host}:{port}\\r\\n\\r\\n'.encode())
+resp = s.recv(4096)
+if not resp.startswith(b'HTTP/1.1 200'):
+    sys.stderr.write(resp.decode())
+    sys.exit(1)
+while True:
+    r, _, _ = select.select([sys.stdin, s], [], [])
+    if sys.stdin in r:
+        data = os.read(0, 8192)
+        if not data: break
+        s.sendall(data)
+    if s in r:
+        data = s.recv(8192)
+        if not data: break
+        os.write(1, data)
+`;
+
+// ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
 
@@ -500,6 +542,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
   let sandboxEnabled = false;
   let sandboxInitialized = false;
   let sshAuthSock = "";
+  let proxyScriptPath = "";
 
   // --- Local tool instances (for delegation when sandbox is off) ---
   const localCwd = process.cwd();
@@ -543,7 +586,7 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 
       const tool = createBashTool(localCwd, {
         operations: createSandboxedBashOps(),
-        spawnHook: createSpawnHook(sshAuthSock),
+        spawnHook: createSpawnHook(sshAuthSock, proxyScriptPath),
       });
       return tool.execute(id, params, signal, onUpdate);
     },
@@ -582,6 +625,14 @@ export default function sandboxExtension(pi: ExtensionAPI) {
       sshAuthSock = sock;
 
       await SandboxManager.initialize(updatedConfig);
+
+      // Write SSH proxy script (tunnels SSH through the sandbox HTTP proxy)
+      const proxyPort = SandboxManager.getProxyPort();
+      if (proxyPort !== undefined) {
+        const scriptDir = join(getAgentDir(), "extensions");
+        proxyScriptPath = join(scriptDir, "pi-proxy-ssh.py");
+        writeFileSync(proxyScriptPath, PROXY_SSH_SCRIPT.replace("__PROXY_PORT__", String(proxyPort)));
+      }
 
       sandboxEnabled = true;
       sandboxInitialized = true;

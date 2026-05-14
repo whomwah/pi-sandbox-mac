@@ -831,6 +831,24 @@ describe("createSpawnHook", () => {
     expect(result.command).toBe("npm test");
     expect(result.cwd).toBe("/app");
   });
+
+  test("does not inject GIT_SSH_COMMAND when proxyScriptPath is not provided", () => {
+    process.env.HOME = "/home/user";
+    const hook = createSpawnHook("/tmp/agent.sock");
+    const result = hook({ command: "git push", cwd: "/proj", env: {} });
+    expect(result.env.GIT_SSH_COMMAND).toBeUndefined();
+  });
+
+  test("injects GIT_SSH_COMMAND when proxyScriptPath is provided", () => {
+    process.env.HOME = "/home/user";
+    const hook = createSpawnHook("/tmp/agent.sock", "/opt/pi/proxy-ssh.py");
+    const result = hook({ command: "git push", cwd: "/proj", env: {} });
+    expect(result.env.GIT_SSH_COMMAND).toBeDefined();
+    expect(result.env.GIT_SSH_COMMAND).toContain("ProxyCommand=python3 /opt/pi/proxy-ssh.py %h %p");
+    expect(result.env.GIT_SSH_COMMAND).toContain("IdentityAgent=/tmp/agent.sock");
+    expect(result.env.GIT_SSH_COMMAND).toContain("StrictHostKeyChecking=no");
+    expect(result.env.GIT_SSH_COMMAND).toContain("UserKnownHostsFile=/dev/null");
+  });
 });
 
 // ---------------------------------------------------------------------------
