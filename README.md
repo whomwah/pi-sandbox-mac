@@ -11,6 +11,19 @@ cd /path/to/your/project
 pi -e /path/to/pi-sandbox/index.ts
 ```
 
+Or add an alias to `~/.zshrc`:
+
+```bash
+alias spi='pi -e $HOME/_dev/pi-sandbox/index.ts'
+```
+
+Then use `spi` exactly like `pi` — extra arguments are forwarded:
+
+```bash
+spi --no-sandbox          # disable sandbox
+spi -m claude-sonnet-4-5  # pick model
+```
+
 On session start, the sandbox initializes with sensible defaults:
 - **Read** is allowed everywhere by default (except sensitive paths like `~/.ssh`, `~/.aws`, `~/.gnupg`)
 - **Write** is restricted to the current directory and `/tmp`
