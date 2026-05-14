@@ -20,48 +20,57 @@ Run `/sandbox` inside pi to see the active configuration.
 
 ## Configuration
 
-Two optional config files are merged together (deep merge — arrays are **concatenated**, not replaced):
+You can optionally override the built-in defaults with:
 
 | File | Purpose |
 |------|---------|
-| `~/.pi/agent/extensions/pi-sandbox.json` | Global config (applies to all projects) |
-| `<project>/.pi/sandbox.json` | Project-local overrides |
+| `~/.pi/agent/extensions/pi-sandbox.json` | Global overrides (applies to all projects) |
+| `<project>/.pi/sandbox.json` | Project-specific overrides |
 
-### Full config shape
+Both files are **optional**. Anything you omit keeps its default value — you don't have to copy the whole config.
 
-```jsonc
+### Default config
+
+```json
 {
-  // Enable/disable sandbox. Default: true.
   "enabled": true,
-
-  // Fallback SSH socket path if $SSH_AUTH_SOCK is unset. Default: "~/.1password/agent.sock"
   "sshAuthSock": "~/.1password/agent.sock",
-
   "network": {
-    // Domains the agent can reach (wildcards supported). Defaults include
-    // npmjs.org, github.com, pypi.org and their subdomains.
-    "allowedDomains": ["npmjs.org", "*.npmjs.org", "github.com", "*.github.com"],
-
-    // Domains explicitly blocked.
+    "allowedDomains": [
+      "npmjs.org", "*.npmjs.org", "registry.npmjs.org",
+      "github.com", "*.github.com",
+      "pypi.org", "*.pypi.org"
+    ],
     "deniedDomains": []
   },
-
   "filesystem": {
-    // Paths the agent cannot read (glob patterns supported).
     "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gcloud"],
-
-    // Paths the agent can write to. Default: [".", "/tmp"].
     "allowWrite": [".", "/tmp"],
-
-    // Paths the agent cannot write to (glob patterns). Default: [".env", ".env.*", "*.pem", "*.key"]
     "denyWrite": [".env", ".env.*", "*.pem", "*.key"]
   }
 }
 ```
 
-### Merge behavior
+### Override rules
 
-Arrays in `network` and `filesystem` are **concatenated** across configs. Scalars like `enabled` are overridden. For example, adding `"allowedDomains": ["internal.registry.local"]` in global config appends to the defaults — it doesn't replace them.
+- **Scalars** (`enabled`, `sshAuthSock`) — the last value wins
+- **Arrays** (`allowedDomains`, `allowWrite`, etc.) — **concatenated**, not replaced
+
+So this global config:
+
+```json
+{ "filesystem": { "allowWrite": ["~/Downloads"] } }
+```
+
+Results in `allowWrite = [".", "/tmp", "~/Downloads"]` — the default paths are kept and `"~/Downloads"` is added.
+
+And this project config:
+
+```json
+{ "enabled": false }
+```
+
+Disables the sandbox for that project only, leaving all other defaults intact.
 
 ## Extra Host Paths
 
