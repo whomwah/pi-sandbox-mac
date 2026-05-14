@@ -489,7 +489,7 @@ describe("resolveSshSocket", () => {
 
   const baseConfig = {
     enabled: true,
-    sshAuthSock: "~/.1password/agent.sock",
+    sshAuthSock: "",
     filesystem: {
       denyRead: ["~/.ssh"],
       allowWrite: [".", "/tmp"],
@@ -507,58 +507,60 @@ describe("resolveSshSocket", () => {
   });
 
   test("falls back to config.sshAuthSock when env var is unset", () => {
+    const configWithCustomSock = { ...baseConfig, sshAuthSock: "/custom/agent.sock" };
     delete process.env.SSH_AUTH_SOCK;
     mockExistsSync.mockReturnValue(true);
-    mockRealpathSync.mockReturnValue(os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock");
+    mockRealpathSync.mockReturnValue("/custom/agent.sock");
+
+    const { sshAuthSock } = resolveSshSocket(configWithCustomSock);
+    expect(sshAuthSock).toBe("/custom/agent.sock");
+  });
+
+  test("auto-detects 1Password agent when $SSH_AUTH_SOCK is unset and config has no socket", () => {
+    delete process.env.SSH_AUTH_SOCK;
+    const onePasswordPath = os.homedir() + "/.1password/agent.sock";
+    mockExistsSync.mockReturnValue(true);
+    mockRealpathSync.mockReturnValue(onePasswordPath);
 
     const { sshAuthSock } = resolveSshSocket(baseConfig);
-    expect(sshAuthSock).toBe(os.homedir() + "/.1password/agent.sock"); // after ~ expansion
+    expect(sshAuthSock).toBe(onePasswordPath);
+  });
+
+  test("returns empty when $SSH_AUTH_SOCK is unset, config is empty, and 1Password socket is absent", () => {
+    delete process.env.SSH_AUTH_SOCK;
+    mockExistsSync.mockReturnValue(false);
+
+    const { sshAuthSock, config } = resolveSshSocket(baseConfig);
+    expect(sshAuthSock).toBe("");
+    expect(config.filesystem.allowWrite).toEqual(baseConfig.filesystem.allowWrite);
   });
 
   test("resolves symlink and adds both dirs to allowWrite and sockets to allowUnixSockets", () => {
-    process.env.SSH_AUTH_SOCK = "~/.1password/agent.sock";
-    delete process.env.SSH_AUTH_SOCK;
-
+    process.env.SSH_AUTH_SOCK = "/run/agent.sock";
     mockExistsSync.mockReturnValue(true);
-    mockRealpathSync.mockReturnValue(
-      os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
-    );
+    mockRealpathSync.mockReturnValue("/run/real/agent.sock");
 
     const { config } = resolveSshSocket(baseConfig);
 
     // filesystem allowWrite
-    expect(config.filesystem.allowWrite).toContain(os.homedir() + "/.1password");
-    expect(config.filesystem.allowWrite).toContain(
-      os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t",
-    );
+    expect(config.filesystem.allowWrite).toContain("/run");
+    expect(config.filesystem.allowWrite).toContain("/run/real");
 
     // network allowUnixSockets
-    expect(config.network.allowUnixSockets).toContain(os.homedir() + "/.1password/agent.sock");
-    expect(config.network.allowUnixSockets).toContain(
-      os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
-    );
+    expect(config.network.allowUnixSockets).toContain("/run/agent.sock");
+    expect(config.network.allowUnixSockets).toContain("/run/real/agent.sock");
   });
 
-  test("handles missing socket by still adding unresolved path dir and socket", () => {
-    delete process.env.SSH_AUTH_SOCK;
+  test("handles symlink resolution failure by still adding unresolved path", () => {
+    process.env.SSH_AUTH_SOCK = "/tmp/broken.sock";
     mockExistsSync.mockReturnValue(true);
     mockRealpathSync.mockImplementation(() => {
       throw new Error("ENOENT");
     });
 
     const { config } = resolveSshSocket(baseConfig);
-    expect(config.filesystem.allowWrite).toContain(os.homedir() + "/.1password");
-    expect(config.network.allowUnixSockets).toContain(os.homedir() + "/.1password/agent.sock");
-  });
-
-  test("handles socket that does not exist", () => {
-    delete process.env.SSH_AUTH_SOCK;
-    mockExistsSync.mockReturnValue(false);
-
-    const { sshAuthSock, config } = resolveSshSocket(baseConfig);
-    expect(sshAuthSock).toBe(os.homedir() + "/.1password/agent.sock");
-    // No extra dirs added
-    expect(config.filesystem.allowWrite).toEqual(baseConfig.filesystem.allowWrite);
+    expect(config.filesystem.allowWrite).toContain("/tmp");
+    expect(config.network.allowUnixSockets).toContain("/tmp/broken.sock");
   });
 });
 

@@ -114,7 +114,7 @@ export function deepMerge(
 
 export const DEFAULT_CONFIG: SandboxConfig = {
   enabled: true,
-  sshAuthSock: "~/.1password/agent.sock",
+  sshAuthSock: "",
   network: {
     allowedDomains: [
       "npmjs.org",
@@ -406,7 +406,17 @@ export function resolveSshSocket(
 ): { sshAuthSock: string; config: SandboxConfig } {
   let sshAuthSock = process.env.SSH_AUTH_SOCK || resolveHome(config.sshAuthSock);
 
+  // Auto-detect 1Password agent for zero-config convenience
+  if (!sshAuthSock) {
+    const onePasswordSock = resolveHome("~/.1password/agent.sock");
+    if (existsSync(onePasswordSock)) {
+      sshAuthSock = onePasswordSock;
+    }
+  }
+
   const updatedConfig = { ...config };
+
+  if (!sshAuthSock) return { sshAuthSock: "", config: updatedConfig };
 
   // Resolve symlink — sandbox-exec won't follow symlinks in its rules
   if (existsSync(sshAuthSock)) {
