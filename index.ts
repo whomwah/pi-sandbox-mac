@@ -280,6 +280,7 @@ export function sandboxExecStream(
   onData: (data: Buffer) => void,
   signal?: AbortSignal,
   timeout?: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ exitCode: number | null }> {
   return new Promise(async (resolve, reject) => {
     let timeoutHandle: NodeJS.Timeout | undefined;
@@ -291,6 +292,7 @@ export function sandboxExecStream(
         cwd,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
+        ...(env ? { env } : {}),
       });
 
       let timedOut = false;
@@ -346,28 +348,49 @@ export function sandboxExecStream(
 // SSH agent spawn hook
 // ---------------------------------------------------------------------------
 
-/** Create a spawnHook that injects SSH_AUTH_SOCK, GIT_SSH_COMMAND, and HOME into every sandboxed spawn. */
+/**
+ * Build the full GIT_SSH_COMMAND value for sandboxed SSH/git operations.
+ * Includes SOCKS proxy, host-key bypass (needed because ~/.ssh is denied),
+ * and 1Password IdentityAgent.
+ */
+export function buildGitSshCommand(socksProxyPort: number, sshAuthSock: string): string {
+  return [
+    "ssh",
+    `-o 'ProxyCommand=nc -X 5 -x localhost:${socksProxyPort} %h %p'`,
+    "-o StrictHostKeyChecking=no",
+    "-o UserKnownHostsFile=/dev/null",
+    "-o CheckHostIP=no",
+    "-o GlobalKnownHostsFile=/dev/null",
+    `-o 'IdentityAgent=${sshAuthSock}'`,
+  ].join(" ");
+}
+
+/**
+ * Create a spawnHook that injects SSH_AUTH_SOCK, HOME, and GIT_SSH_COMMAND
+ * into every sandboxed spawn.
+ *
+ * GIT_SSH_COMMAND is injected via a command prefix (`export GIT_SSH_COMMAND=...`)
+ * rather than through the env object because the sandbox runtime's
+ * `wrapWithSandbox()` hardcodes its own GIT_SSH_COMMAND via an `env` command
+ * wrapper. Env vars set through Node's spawn options are overridden by that
+ * wrapper. By exporting inside the command, we override the sandbox's value
+ * at the shell level.
+ */
 export function createSpawnHook(sshAuthSock: string, socksProxyPort?: number): BashSpawnHook {
   return ({ command, cwd, env }) => {
     const extraEnv: Record<string, string> = {
       SSH_AUTH_SOCK: sshAuthSock,
       HOME: process.env.HOME ?? "",
     };
+    let finalCommand = command;
     if (socksProxyPort !== undefined) {
-      const gitSshCmd = [
-        "ssh",
-        `-o 'ProxyCommand=nc -X 5 -x localhost:${socksProxyPort} %h %p'`,
-        "-o StrictHostKeyChecking=no",
-        "-o UserKnownHostsFile=/dev/null",
-        "-o CheckHostIP=no",
-        "-o GlobalKnownHostsFile=/dev/null",
-        `-o 'IdentityAgent=${sshAuthSock}'`,
-      ].join(" ");
-      // Inject directly into command to override pi's own GIT_SSH_COMMAND
-      command = `GIT_SSH_COMMAND='${gitSshCmd}' ${command}`;
+      const gitSshCmd = buildGitSshCommand(socksProxyPort, sshAuthSock);
+      // Prefix the command with an export so it overrides the sandbox's
+      // hardcoded GIT_SSH_COMMAND from the `env` wrapper.
+      finalCommand = `export GIT_SSH_COMMAND=${JSON.stringify(gitSshCmd)}; ${command}`;
     }
     return {
-      command,
+      command: finalCommand,
       cwd,
       env: { ...env, ...extraEnv },
     };
@@ -479,10 +502,11 @@ export function createSandboxedBashOps(): BashOperations {
     async exec(
       command: string,
       cwd: string,
-      { onData, signal, timeout }: {
+      { onData, signal, timeout, env }: {
         onData: (data: Buffer) => void;
         signal?: AbortSignal;
         timeout?: number;
+        env?: NodeJS.ProcessEnv;
       },
     ): Promise<{ exitCode: number | null }> {
       if (!existsSync(cwd)) {
@@ -494,6 +518,7 @@ export function createSandboxedBashOps(): BashOperations {
         onData,
         signal,
         timeout,
+        env,
       );
     },
   };

@@ -81,6 +81,7 @@ import {
   sandboxExec,
   sandboxExecStream,
   resolveSshSocket,
+  buildGitSshCommand,
   createSpawnHook,
   createSandboxedReadOps,
   createSandboxedWriteOps,
@@ -775,6 +776,29 @@ describe("createSandboxedEditOps", () => {
 // createSpawnHook
 // ---------------------------------------------------------------------------
 
+describe("buildGitSshCommand", () => {
+  test("includes all required SSH options", () => {
+    const cmd = buildGitSshCommand(57632, "/tmp/agent.sock");
+    expect(cmd).toContain("ProxyCommand=nc -X 5 -x localhost:57632 %h %p");
+    expect(cmd).toContain("StrictHostKeyChecking=no");
+    expect(cmd).toContain("UserKnownHostsFile=/dev/null");
+    expect(cmd).toContain("CheckHostIP=no");
+    expect(cmd).toContain("GlobalKnownHostsFile=/dev/null");
+    expect(cmd).toContain("IdentityAgent=/tmp/agent.sock");
+    expect(cmd).toMatch(/^ssh /); // starts with ssh
+  });
+
+  test("uses provided port and socket path", () => {
+    const cmd = buildGitSshCommand(12345, "/custom/socket.sock");
+    expect(cmd).toContain("localhost:12345");
+    expect(cmd).toContain("IdentityAgent=/custom/socket.sock");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createSpawnHook
+// ---------------------------------------------------------------------------
+
 describe("createSpawnHook", () => {
   const originalHome = process.env.HOME;
 
@@ -832,23 +856,27 @@ describe("createSpawnHook", () => {
     expect(result.cwd).toBe("/app");
   });
 
-  test("does not inject GIT_SSH_COMMAND when socksProxyPort is not provided", () => {
+  test("does not prefix command when socksProxyPort is not provided", () => {
     process.env.HOME = "/home/user";
     const hook = createSpawnHook("/tmp/agent.sock");
     const result = hook({ command: "git push", cwd: "/proj", env: {} });
-    expect(result.env.GIT_SSH_COMMAND).toBeUndefined();
+    expect(result.command).toBe("git push");
   });
 
-  test("injects GIT_SSH_COMMAND into command prefix when socksProxyPort is provided", () => {
+  test("prefixes command with export GIT_SSH_COMMAND when socksProxyPort is provided", () => {
     process.env.HOME = "/home/user";
     const hook = createSpawnHook("/tmp/agent.sock", 57632);
     const result = hook({ command: "git push", cwd: "/proj", env: {} });
-    expect(result.command).toContain("GIT_SSH_COMMAND='");
+    // Command should be prefixed with export to override sandbox's hardcoded env
+    expect(result.command).toContain("export GIT_SSH_COMMAND=");
     expect(result.command).toContain("ProxyCommand=nc -X 5 -x localhost:57632 %h %p");
     expect(result.command).toContain("IdentityAgent=/tmp/agent.sock");
     expect(result.command).toContain("StrictHostKeyChecking=no");
     expect(result.command).toContain("UserKnownHostsFile=/dev/null");
-    expect(result.command).toMatch(/GIT_SSH_COMMAND='.+ git push/);
+    expect(result.command).toContain("CheckHostIP=no");
+    expect(result.command).toContain("GlobalKnownHostsFile=/dev/null");
+    // Original command should be appended after the export
+    expect(result.command).toContain("; git push");
   });
 });
 
@@ -900,5 +928,34 @@ describe("createSandboxedBashOps", () => {
     await promise;
 
     expect(mockWrapWithSandbox).toHaveBeenCalledWith('cd "/project" && make build');
+  });
+
+  test("exec passes env to spawn when provided", async () => {
+    const child = fakeChildProcess();
+    mockSpawn.mockReturnValue(child);
+    const onData = vi.fn();
+    const customEnv = { GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no", PATH: "/usr/bin" };
+
+    const ops = createSandboxedBashOps();
+    const promise = ops.exec("git push", "/project", { onData, env: customEnv });
+    setImmediate(() => child.emit("close", 0));
+    await promise;
+
+    const spawnOpts = mockSpawn.mock.calls[0][2];
+    expect(spawnOpts.env).toEqual(customEnv);
+  });
+
+  test("exec does not set env on spawn when not provided", async () => {
+    const child = fakeChildProcess();
+    mockSpawn.mockReturnValue(child);
+    const onData = vi.fn();
+
+    const ops = createSandboxedBashOps();
+    const promise = ops.exec("ls", "/project", { onData });
+    setImmediate(() => child.emit("close", 0));
+    await promise;
+
+    const spawnOpts = mockSpawn.mock.calls[0][2];
+    expect(spawnOpts.env).toBeUndefined();
   });
 });
