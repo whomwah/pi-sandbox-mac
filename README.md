@@ -4,7 +4,13 @@ macOS-native OS-level sandbox extension for [pi](https://github.com/earendil-wor
 
 Blocks dangerous filesystem and network operations at the kernel level using `sandbox-exec` (no Docker, no containers). Agent tools (`read`, `write`, `edit`, `bash`) are automatically wrapped with sandbox policies.
 
-## Quick Start
+## Install
+
+```bash
+git clone https://github.com/earendil-works/pi-sandbox.git
+```
+
+Then run pi with the extension:
 
 ```bash
 cd /path/to/your/project
