@@ -374,20 +374,34 @@ export function resolveSshSocket(
   if (existsSync(sshAuthSock)) {
     try {
       const realSock = realpathSync(sshAuthSock);
-      // Add both symlink dir and real path dir to allowWrite
+
+      // Add both symlink dir and real path dir to filesystem allowWrite
       const extraPaths = [dirname(sshAuthSock), dirname(realSock)];
-      const existing = updatedConfig.filesystem?.allowWrite ?? [];
+      const existingWrite = updatedConfig.filesystem?.allowWrite ?? [];
       updatedConfig.filesystem = {
         ...updatedConfig.filesystem,
-        allowWrite: [...new Set([...existing, ...extraPaths])],
+        allowWrite: [...new Set([...existingWrite, ...extraPaths])],
+      };
+
+      // Add both symlink and resolved socket paths to network allowUnixSockets
+      const existingSockets = updatedConfig.network?.allowUnixSockets ?? [];
+      updatedConfig.network = {
+        ...updatedConfig.network,
+        allowUnixSockets: [...new Set([...existingSockets, sshAuthSock, realSock])],
       };
     } catch {
-      // symlink resolution failed — still add the unresolved path dir
+      // symlink resolution failed — still add the unresolved path dir and socket
       const extraPath = dirname(sshAuthSock);
-      const existing = updatedConfig.filesystem?.allowWrite ?? [];
+      const existingWrite = updatedConfig.filesystem?.allowWrite ?? [];
       updatedConfig.filesystem = {
         ...updatedConfig.filesystem,
-        allowWrite: [...new Set([...existing, extraPath])],
+        allowWrite: [...new Set([...existingWrite, extraPath])],
+      };
+
+      const existingSockets = updatedConfig.network?.allowUnixSockets ?? [];
+      updatedConfig.network = {
+        ...updatedConfig.network,
+        allowUnixSockets: [...new Set([...existingSockets, sshAuthSock])],
       };
     }
   }

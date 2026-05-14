@@ -514,7 +514,7 @@ describe("resolveSshSocket", () => {
     expect(sshAuthSock).toBe(os.homedir() + "/.1password/agent.sock"); // after ~ expansion
   });
 
-  test("resolves symlink and adds both dirs to allowWrite", () => {
+  test("resolves symlink and adds both dirs to allowWrite and sockets to allowUnixSockets", () => {
     process.env.SSH_AUTH_SOCK = "~/.1password/agent.sock";
     delete process.env.SSH_AUTH_SOCK;
 
@@ -525,13 +525,20 @@ describe("resolveSshSocket", () => {
 
     const { config } = resolveSshSocket(baseConfig);
 
+    // filesystem allowWrite
     expect(config.filesystem.allowWrite).toContain(os.homedir() + "/.1password");
     expect(config.filesystem.allowWrite).toContain(
       os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t",
     );
+
+    // network allowUnixSockets
+    expect(config.network.allowUnixSockets).toContain(os.homedir() + "/.1password/agent.sock");
+    expect(config.network.allowUnixSockets).toContain(
+      os.homedir() + "/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
+    );
   });
 
-  test("handles missing socket by still adding unresolved path dir", () => {
+  test("handles missing socket by still adding unresolved path dir and socket", () => {
     delete process.env.SSH_AUTH_SOCK;
     mockExistsSync.mockReturnValue(true);
     mockRealpathSync.mockImplementation(() => {
@@ -540,7 +547,7 @@ describe("resolveSshSocket", () => {
 
     const { config } = resolveSshSocket(baseConfig);
     expect(config.filesystem.allowWrite).toContain(os.homedir() + "/.1password");
-    // Should not crash
+    expect(config.network.allowUnixSockets).toContain(os.homedir() + "/.1password/agent.sock");
   });
 
   test("handles socket that does not exist", () => {
