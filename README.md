@@ -61,100 +61,50 @@ Two optional config files are merged together (deep merge — arrays are **conca
 
 ### Merge behavior
 
-When both global and project configs exist, arrays in `network` and `filesystem` are concatenated. Scalars like `enabled` are overridden.
-
-**Global config** adds an extra allowed domain:
-```json
-{ "network": { "allowedDomains": ["internal.registry.local"] } }
-```
-
-**Project config** adds an extra write path:
-```json
-{ "filesystem": { "allowWrite": ["~/Downloads"] } }
-```
-
-Result: `allowedDomains` includes npmjs.org, github.com, **and** internal.registry.local. `allowWrite` includes `.`, `/tmp`, **and** `~/Downloads`.
+Arrays in `network` and `filesystem` are **concatenated** across configs. Scalars like `enabled` are overridden. For example, adding `"allowedDomains": ["internal.registry.local"]` in global config appends to the defaults — it doesn't replace them.
 
 ## Extra Host Paths
 
-Grant additional read/write access by adding paths to `allowWrite`. Common use cases:
+Grant additional write access via `allowWrite`:
 
 ```jsonc
 // .pi/sandbox.json
-{
-  "filesystem": {
-    "allowWrite": [
-      ".",           // current directory (included by default)
-      "/tmp",        // temp directory (included by default)
-      "~/Downloads", // access to user Downloads
-      "~/Desktop",   // access to user Desktop
-      "/Volumes/external-drive" // external drive
-    ]
-  }
-}
+{ "filesystem": { "allowWrite": ["~/Downloads", "/Volumes/external-drive"] } }
 ```
 
-> **Note:** Write access gives the agent full control over files in that directory. Only grant what's needed.
+Write access gives the agent full control over files in that path — only grant what's needed.
 
 ## SSH / Git with 1Password
 
-pi-sandbox auto-detects your SSH agent socket so Git operations work through the sandbox.
+Git works automatically if 1Password SSH agent is running. No manual config needed.
 
-1. The `$SSH_AUTH_SOCK` environment variable is read first. If not set, falls back to `~/.1password/agent.sock`.
-2. Because 1Password's socket is usually a symlink (pointing into `~/Library/Group Containers/`), both the symlink path and the real path are added to the sandbox's `allowWrite` list before initialization.
-3. `SSH_AUTH_SOCK` and `HOME` are injected into every sandboxed `bash` command via a spawn hook.
+The extension reads `$SSH_AUTH_SOCK` (falling back to `~/.1password/agent.sock`), resolves the symlink, and adds both paths to the sandbox allow list. A spawn hook injects `SSH_AUTH_SOCK`, `HOME`, and a `GIT_SSH_COMMAND` with the correct SOCKS proxy and host-key options into every bash command.
 
-No manual configuration needed — if 1Password SSH agent is running, Git works.
+## Commands & Flags
 
-## Commands
-
-### `/sandbox`
-
-Shows the current sandbox configuration loaded at session start:
-- Network: allowed and denied domains
-- Filesystem: deny read, allow write, deny write paths
-- SSH agent socket path
-
-If the sandbox is disabled, shows a notification instead.
-
-## Flags
-
-### `--no-sandbox`
-
-Disables sandboxing entirely. All tools operate normally without any filesystem or network restrictions.
-
-```bash
-pi -e /path/to/pi-sandbox/index.ts --no-sandbox
-```
+- **`/sandbox`** — Show active sandbox config (domains, paths, SSH socket)
+- **`--no-sandbox`** — Disable sandboxing entirely: `pi -e /path/to/pi-sandbox/index.ts --no-sandbox`
 
 ## Troubleshooting
 
 ### "Sandbox initialization failed: sandbox-exec not found"
 
-`sandbox-exec` is part of macOS. If missing, your system may need to be updated. The extension requires macOS.
+`sandbox-exec` is macOS-only. The extension requires macOS.
 
 ### "Permission denied" when reading/writing files
 
-The sandbox is blocking access. Either:
-- Add the path to `allowWrite` in `.pi/sandbox.json`
-- Remove the path from `denyRead` if read is being blocked
-- Use `--no-sandbox` to disable the sandbox entirely
-
-### "Working directory does not exist" on bash commands
-
-The current working directory (`cwd`) must exist before running sandboxed commands. Ensure you're in a real directory.
+Add the path to `allowWrite` in `.pi/sandbox.json`, remove it from `denyRead`, or use `--no-sandbox`.
 
 ### SSH / Git fails with authentication errors
 
-1. Confirm 1Password SSH agent is enabled
-2. Check `echo $SSH_AUTH_SOCK` in your terminal — should point to the socket
-3. Run `/sandbox` in pi to verify the socket path is detected
-4. If using a non-standard SSH socket, set `sshAuthSock` in your config
+1. Confirm 1Password SSH agent is enabled and `echo $SSH_AUTH_SOCK` points to the socket
+2. Run `/sandbox` in pi to verify the socket path is detected
+3. If using a non-standard socket, set `sshAuthSock` in your config
 
 ### Large file writes fail (>512KB)
 
-The `writeFile` operation uses `echo ... | base64 -d` which hits the shell's `ARG_MAX` limit. Files larger than ~512KB may fail. This is a known limitation inherited from the shell-based approach.
+`writeFile` uses `echo ... | base64 -d` which hits the shell's `ARG_MAX` limit. A known limitation of the shell-based approach.
 
 ### Extension conflict with pi's built-in sandbox
 
-Do not load both `pi-sandbox` and pi's built-in sandbox example simultaneously. They both wrap the same tools and may interfere.
+Don't load both `pi-sandbox` and pi's built-in sandbox simultaneously — they wrap the same tools.
