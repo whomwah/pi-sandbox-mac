@@ -539,13 +539,6 @@ export function createSandboxedBashOps(): BashOperations {
 // ---------------------------------------------------------------------------
 
 export default function sandboxExtension(pi: ExtensionAPI) {
-  // --- Flag ---
-  pi.registerFlag("no-sandbox", {
-    description: "Disable OS-level sandboxing",
-    type: "boolean",
-    default: false,
-  });
-
   // --- State ---
   let sandboxEnabled = false;
   let sandboxInitialized = false;
@@ -608,13 +601,6 @@ export default function sandboxExtension(pi: ExtensionAPI) {
 
   // --- session_start ---
   pi.on("session_start", async (_event, ctx) => {
-    const noSandbox = pi.getFlag("no-sandbox") as boolean;
-    if (noSandbox) {
-      sandboxEnabled = false;
-      ctx.ui.notify("Sandbox disabled via --no-sandbox", "warning");
-      return;
-    }
-
     const config = loadConfig(ctx.cwd);
     if (!config.enabled) {
       sandboxEnabled = false;

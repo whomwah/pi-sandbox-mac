@@ -23,12 +23,13 @@ Or add an alias to `~/.zshrc`:
 alias spi='pi -e $HOME/_dev/pi-sandbox/index.ts'
 ```
 
-Then use `spi` exactly like `pi` — extra arguments are forwarded:
+Then use `spi` exactly like `pi` — all standard pi flags work:
 
 ```bash
-spi --no-sandbox          # disable sandbox
 spi -m claude-sonnet-4-5  # pick model
 ```
+
+To skip the sandbox for a session, just use plain `pi` instead of `spi`.
 
 On session start, the sandbox initializes with sensible defaults:
 - **Read** is allowed everywhere by default (except sensitive paths like `~/.ssh`, `~/.aws`, `~/.gnupg`)
@@ -110,10 +111,9 @@ If `$SSH_AUTH_SOCK` is unset, the extension auto-detects `~/.1password/agent.soc
 
 Once the socket is resolved, the extension resolves any symlinks and adds both paths to the sandbox allow list. A spawn hook injects `SSH_AUTH_SOCK`, `HOME`, and a `GIT_SSH_COMMAND` with the correct SOCKS proxy and host-key options into every bash command.
 
-## Commands & Flags
+## Commands
 
 - **`/sandbox`** — Show active sandbox config (domains, paths, SSH socket)
-- **`--no-sandbox`** — Disable sandboxing entirely: `pi -e /path/to/pi-sandbox/index.ts --no-sandbox`
 
 ## Troubleshooting
 
@@ -123,7 +123,7 @@ Once the socket is resolved, the extension resolves any symlinks and adds both p
 
 ### "Permission denied" when reading/writing files
 
-Add the path to `allowWrite` in `.pi/sandbox.json`, remove it from `denyRead`, or use `--no-sandbox`.
+Add the path to `allowWrite` in `.pi/sandbox.json`, remove it from `denyRead`, or disable the sandbox for that project via `.pi/sandbox.json`.
 
 ### SSH / Git fails with authentication errors
 
